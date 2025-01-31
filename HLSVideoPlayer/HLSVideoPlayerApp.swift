@@ -11,7 +11,7 @@ import SwiftUI
 struct HLSVideoPlayerApp: App {
     var body: some Scene {
         WindowGroup {
-            Reels2()
+            ReelsPlayer()
         }
     }
 }
