@@ -30,8 +30,13 @@ struct VideoPlayerView: UIViewControllerRepresentable {
         playerViewController.player = player
         playerViewController.showsPlaybackControls = false // Hide controls for a cleaner look
         playerViewController.requiresLinearPlayback = true // Disable visual search and other non-linear features
+        
+        // Disable user interaction for the entire view
+        playerViewController.view.isUserInteractionEnabled = false
+        
         return playerViewController
     }
+
 
     func updateUIViewController(_ uiViewController: AVPlayerViewController, context: Context) {
         // No updates needed
@@ -41,7 +46,7 @@ struct VideoPlayerView: UIViewControllerRepresentable {
 // MARK: - Video Player Manager
 class VideoPlayerManager: ObservableObject {
     @Published var players: [AVPlayer?]
-    private var preloadCount = 2 // Number of videos to preload ahead
+    private var preloadCount = 1 // Number of videos to preload ahead
     private var videos: [Video]
 
     init(videos: [Video]) {
@@ -97,6 +102,16 @@ class VideoPlayerManager: ObservableObject {
         players[index]?.play()
     }
 
+    func seekPlayer(at index: Int, to time: CMTime) {
+        print("Seeking video \(index) to \(time.seconds)")
+        players[index]?.seek(to: time, toleranceBefore: .zero, toleranceAfter: .zero)
+    }
+
+    func resetPlayer(at index: Int) {
+        print("Resetting video \(index)")
+        players[index]?.seek(to: .zero)
+    }
+
     deinit {
         // Clean up observers
         for player in players {
@@ -111,6 +126,13 @@ struct VideoReelView: View {
     @StateObject private var playerManager: VideoPlayerManager
     @State private var currentIndex: Int = 0
     @State private var showFullCaption: Bool = false
+    @State private var isPaused: Bool = false
+    @State private var progress: Double = 0.0
+    @State private var isLoading: Bool = false
+    @State private var showPauseIcon: Bool = false
+    @State private var isSeeking: Bool = false
+    @State private var seekProgress: Double = 0.0
+    @State private var loadingAnimation: Bool = false
 
     init(videos: [Video]) {
         self.videos = videos
@@ -134,58 +156,127 @@ struct VideoReelView: View {
                                             .onChange(of: isVisible) { _, newIsVisible in
                                                 handleVisibilityChange(newIsVisible, index: index)
                                             }
+                                            .onAppear {
+                                                // Observe progress for the current video
+                                                let interval = CMTime(seconds: 0.1, preferredTimescale: CMTimeScale(NSEC_PER_SEC))
+                                                player.addPeriodicTimeObserver(forInterval: interval, queue: .main) { time in
+                                                    if let duration = player.currentItem?.duration.seconds, duration > 0 {
+                                                        progress = time.seconds / duration
+                                                    }
+                                                }
+                                            }
+                                            .overlay(
+                                                // Progress Bar
+                                                VStack {
+                                                    Spacer()
+                                                    ZStack(alignment: .leading) {
+                                                        Rectangle()
+                                                            .frame(height: 3)
+                                                            .foregroundColor(isLoading ? (loadingAnimation ? .gray.opacity(0.7) : .gray.opacity(0.2)) : .gray.opacity(0.5))
+                                                            .animation(.easeInOut(duration: 0.5).repeatForever(autoreverses: true), value: loadingAnimation)
+                                                        Rectangle()
+                                                            .frame(width: geometry.size.width * CGFloat(isSeeking ? seekProgress : progress), height: 3)
+                                                            .foregroundColor(.white)
+                                                    }
+                                                    .padding(.horizontal, 16)
+                                                    .padding(.bottom, 60)
+                                                    .gesture(
+                                                        // Seek Gesture
+                                                        DragGesture(minimumDistance: 0)
+                                                            .onChanged { value in
+                                                                isSeeking = true
+                                                                let seekLocation = value.location.x / geometry.size.width
+                                                                seekProgress = max(0, min(seekLocation, 1))
+                                                                if let duration = player.currentItem?.duration.seconds {
+                                                                    let seekTime = CMTime(seconds: duration * seekProgress, preferredTimescale: CMTimeScale(NSEC_PER_SEC))
+                                                                    playerManager.seekPlayer(at: index, to: seekTime)
+                                                                }
+                                                            }
+                                                            .onEnded { _ in
+                                                                isSeeking = false
+                                                            }
+                                                    )
+                                                }
+                                            )
+                                            .overlay(
+                                                // Pause Icon with Animation
+                                                Group {
+                                                    if showPauseIcon {
+                                                        Image(systemName: isPaused ? "play.circle.fill" : "pause.circle.fill")
+                                                            .font(.system(size: 60))
+                                                            .foregroundColor(.white.opacity(0.8))
+                                                            .transition(.scale.combined(with: .opacity))
+                                                    }
+                                                }
+                                                .animation(.easeInOut(duration: 0.2), value: showPauseIcon)
+                                            )
+                                            .onTapGesture { location in
+                                                // Calculate the tap location relative to the screen height
+                                                let screenHeight = geometry.size.height
+                                                let tapY = location.y
+
+                                                // Only trigger play/pause if the tap is in the top 80% of the screen
+                                                if tapY < screenHeight * 0.8 {
+                                                    isPaused.toggle()
+                                                    if isPaused {
+                                                        playerManager.pausePlayer(at: index)
+                                                    } else {
+                                                        playerManager.playPlayer(at: index)
+                                                    }
+                                                    // Show pause icon with animation
+                                                    showPauseIcon = true
+                                                    DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+                                                        showPauseIcon = false
+                                                    }
+                                                }
+                                            }
                                     } else {
                                         Color.black // Placeholder while loading
                                             .frame(width: geometry.size.width, height: geometry.size.height)
                                             .onAppear {
                                                 print("Loading video \(index)")
+                                                isLoading = true
+                                                loadingAnimation = true
                                                 playerManager.loadPlayer(for: index)
                                                 if index == 0 {
                                                     print("Force playing video \(index)")
                                                     playerManager.playPlayer(at: index)
                                                     playerManager.preloadNextVideos(from: index)
                                                 }
+                                                isLoading = false
+                                                loadingAnimation = false
                                             }
                                     }
 
                                     // Overlay UI for likes, comments, views, profile, etc.
                                     VStack {
                                         Spacer()
+                                            .onTapGesture { location in
+                                                // Calculate the tap location relative to the screen height
+                                                let screenHeight = geometry.size.height
+                                                let tapY = location.y
 
-                                        HStack {
-                                            // User Profile, Username, Timestamp, and Caption
-                                            VStack(alignment: .leading, spacing: 8) {
-                                                HStack {
-                                                    Image(video.userProfileImage) // Replace with your image asset
-                                                        .resizable()
-                                                        .scaledToFill()
-                                                        .frame(width: 40, height: 40)
-                                                        .clipShape(Circle())
-
-                                                    Text(video.username)
-                                                        .font(.system(size: 14, weight: .semibold))
-                                                        .foregroundColor(.white)
-
-                                                    Spacer()
-
-                                                    Text(video.timestamp)
-                                                        .font(.system(size: 12, weight: .regular))
-                                                        .foregroundColor(.white)
-                                                }
-
-                                                Text(video.caption)
-                                                    .font(.system(size: 14, weight: .regular))
-                                                    .foregroundColor(.white)
-                                                    .lineLimit(showFullCaption ? nil : 2)
-                                                    .onTapGesture {
-                                                        showFullCaption.toggle()
+                                                // Only trigger play/pause if the tap is in the top 80% of the screen
+                                                if tapY < screenHeight * 0.8 {
+                                                    isPaused.toggle()
+                                                    if isPaused {
+                                                        playerManager.pausePlayer(at: index)
+                                                    } else {
+                                                        playerManager.playPlayer(at: index)
                                                     }
+                                                    // Show pause icon with animation
+                                                    showPauseIcon = true
+                                                    DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+                                                        showPauseIcon = false
+                                                    }
+                                                }
                                             }
 
+                                        
+                                        // Like, Comment, View Section
+                                        HStack {
                                             Spacer()
-
-                                            // Like, Comment, View Section
-                                            VStack(spacing: 16) {
+                                            VStack(alignment: .trailing ,spacing: 20) {
                                                 Button(action: {
                                                     // Handle like action
                                                 }) {
@@ -193,13 +284,13 @@ struct VideoReelView: View {
                                                         Image(systemName: "heart.fill")
                                                             .font(.system(size: 24))
                                                             .foregroundColor(.white)
-
+                                                        
                                                         Text("\(video.likes)")
                                                             .font(.system(size: 12, weight: .semibold))
                                                             .foregroundColor(.white)
                                                     }
                                                 }
-
+                                                
                                                 Button(action: {
                                                     // Handle comment action
                                                 }) {
@@ -207,13 +298,13 @@ struct VideoReelView: View {
                                                         Image(systemName: "message.fill")
                                                             .font(.system(size: 24))
                                                             .foregroundColor(.white)
-
+                                                        
                                                         Text("\(video.comments)")
                                                             .font(.system(size: 12, weight: .semibold))
                                                             .foregroundColor(.white)
                                                     }
                                                 }
-
+                                                
                                                 Button(action: {
                                                     // Handle view action
                                                 }) {
@@ -221,16 +312,57 @@ struct VideoReelView: View {
                                                         Image(systemName: "eye.fill")
                                                             .font(.system(size: 24))
                                                             .foregroundColor(.white)
-
+                                                        
                                                         Text("\(video.views)")
                                                             .font(.system(size: 12, weight: .semibold))
                                                             .foregroundColor(.white)
                                                     }
                                                 }
                                             }
-                                            .padding(.trailing, 16)
+                                            .padding(.trailing,16)
                                         }
-                                        .padding(.bottom, 60)
+
+                                        VStack {
+                                            
+                                            HStack {
+                                                Image(video.userProfileImage) // Replace with your image asset
+                                                    .resizable()
+                                                    .scaledToFill()
+                                                    .frame(width: 40, height: 40)
+                                                    .clipShape(Circle())
+                                                
+                                                Circle()
+                                                    .frame(width: 40, height: 40, alignment: .center)
+
+                                            
+                                            // User Profile, Username, Timestamp, and Caption
+                                            VStack(alignment: .leading, spacing: 8) {
+
+                                                    Text(video.username)
+                                                        .font(.system(size: 14, weight: .semibold))
+                                                        .foregroundColor(.white)
+
+                                    //                                                    Spacer()
+
+                                                    Text(video.timestamp)
+                                                        .font(.system(size: 12, weight: .regular))
+                                                        .foregroundColor(.white)
+                                                }
+                                                Spacer()
+                                            }.padding(.leading,16)
+                                            
+                                            Text(video.caption)
+                                                .font(.system(size: 14, weight: .regular))
+                                                .foregroundColor(.white)
+                                                .lineLimit(showFullCaption ? nil : 2)
+                                                .onTapGesture {
+                                                    showFullCaption.toggle()
+                                                }
+                                                .padding(.leading,16)
+
+                                            
+                                        }
+                                        .padding(.bottom, 70)
                                     }
                                 }
                             }
@@ -253,6 +385,7 @@ struct VideoReelView: View {
             print("Video \(index) is now visible")
             if currentIndex != index {
                 playerManager.pausePlayer(at: currentIndex)
+                playerManager.resetPlayer(at: currentIndex) // Reset previous video
                 playerManager.playPlayer(at: index)
                 currentIndex = index
             }
@@ -260,7 +393,6 @@ struct VideoReelView: View {
         }
     }
 }
-
 // MARK: - ContentView
 struct ReelsPlayer: View {
     let videos = [
@@ -351,3 +483,5 @@ struct ReelsPlayer: View {
             .edgesIgnoringSafeArea(.all)
     }
 }
+
+
