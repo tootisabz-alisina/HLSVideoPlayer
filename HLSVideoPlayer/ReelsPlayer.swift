@@ -1,3 +1,10 @@
+//
+//  ReelsPlayer.swift
+//  HLSVideoPlayer
+//
+//  Created by Alisina Haidari on 31.01.2025.
+//
+
 import SwiftUI
 import AVKit
 
@@ -21,10 +28,13 @@ struct VideoPlayerView: UIViewControllerRepresentable {
     func makeUIViewController(context: Context) -> AVPlayerViewController {
         let playerViewController = AVPlayerViewController()
         playerViewController.player = player
-        playerViewController.showsPlaybackControls = false // Hide controls for a cleaner look
-        playerViewController.requiresLinearPlayback = true // Disable visual search and other non-linear features
+        playerViewController.showsPlaybackControls = false
+        playerViewController.requiresLinearPlayback = true
+        
+        
         return playerViewController
     }
+
 
     func updateUIViewController(_ uiViewController: AVPlayerViewController, context: Context) {
         // No updates needed
@@ -166,8 +176,9 @@ struct VideoReelView: View {
                                                             .frame(width: geometry.size.width * CGFloat(isSeeking ? seekProgress : progress), height: 3)
                                                             .foregroundColor(.white)
                                                     }
-                                                    .padding(.horizontal, 16)
-                                                    .padding(.bottom, 60)
+                                                    .padding(.vertical, 16)
+                                                    .background(.black)
+                                                    .padding(.bottom, 40)
                                                     .gesture(
                                                         // Seek Gesture
                                                         DragGesture(minimumDistance: 0)
@@ -198,18 +209,24 @@ struct VideoReelView: View {
                                                 }
                                                 .animation(.easeInOut(duration: 0.2), value: showPauseIcon)
                                             )
-                                            .onTapGesture {
-                                                // Toggle play/pause on tap
-                                                isPaused.toggle()
-                                                if isPaused {
-                                                    playerManager.pausePlayer(at: index)
-                                                } else {
-                                                    playerManager.playPlayer(at: index)
-                                                }
-                                                // Show pause icon with animation
-                                                showPauseIcon = true
-                                                DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
-                                                    showPauseIcon = false
+                                            .onTapGesture { location in
+                                                // Calculate the tap location relative to the screen height
+                                                let screenHeight = geometry.size.height
+                                                let tapY = location.y
+
+                                                // Only trigger play/pause if the tap is in the top 80% of the screen
+                                                if tapY < screenHeight * 0.8 {
+                                                    isPaused.toggle()
+                                                    if isPaused {
+                                                        playerManager.pausePlayer(at: index)
+                                                    } else {
+                                                        playerManager.playPlayer(at: index)
+                                                    }
+                                                    // Show pause icon with animation
+                                                    showPauseIcon = true
+                                                    DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+                                                        showPauseIcon = false
+                                                    }
                                                 }
                                             }
                                     } else {
@@ -233,41 +250,32 @@ struct VideoReelView: View {
                                     // Overlay UI for likes, comments, views, profile, etc.
                                     VStack {
                                         Spacer()
+                                            .onTapGesture { location in
+                                                // Calculate the tap location relative to the screen height
+                                                let screenHeight = geometry.size.height
+                                                let tapY = location.y
 
-                                        HStack {
-                                            // User Profile, Username, Timestamp, and Caption
-                                            VStack(alignment: .leading, spacing: 8) {
-                                                HStack {
-                                                    Image(video.userProfileImage) // Replace with your image asset
-                                                        .resizable()
-                                                        .scaledToFill()
-                                                        .frame(width: 40, height: 40)
-                                                        .clipShape(Circle())
-
-                                                    Text(video.username)
-                                                        .font(.system(size: 14, weight: .semibold))
-                                                        .foregroundColor(.white)
-
-                                                    Spacer()
-
-                                                    Text(video.timestamp)
-                                                        .font(.system(size: 12, weight: .regular))
-                                                        .foregroundColor(.white)
-                                                }
-
-                                                Text(video.caption)
-                                                    .font(.system(size: 14, weight: .regular))
-                                                    .foregroundColor(.white)
-                                                    .lineLimit(showFullCaption ? nil : 2)
-                                                    .onTapGesture {
-                                                        showFullCaption.toggle()
+                                                // Only trigger play/pause if the tap is in the top 80% of the screen
+                                                if tapY < screenHeight * 0.8 {
+                                                    isPaused.toggle()
+                                                    if isPaused {
+                                                        playerManager.pausePlayer(at: index)
+                                                    } else {
+                                                        playerManager.playPlayer(at: index)
                                                     }
+                                                    // Show pause icon with animation
+                                                    showPauseIcon = true
+                                                    DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+                                                        showPauseIcon = false
+                                                    }
+                                                }
                                             }
 
+                                        
+                                        // Like, Comment, View Section
+                                        HStack {
                                             Spacer()
-
-                                            // Like, Comment, View Section
-                                            VStack(spacing: 16) {
+                                            VStack(alignment: .trailing ,spacing: 20) {
                                                 Button(action: {
                                                     // Handle like action
                                                 }) {
@@ -275,13 +283,13 @@ struct VideoReelView: View {
                                                         Image(systemName: "heart.fill")
                                                             .font(.system(size: 24))
                                                             .foregroundColor(.white)
-
+                                                        
                                                         Text("\(video.likes)")
                                                             .font(.system(size: 12, weight: .semibold))
                                                             .foregroundColor(.white)
                                                     }
                                                 }
-
+                                                
                                                 Button(action: {
                                                     // Handle comment action
                                                 }) {
@@ -289,13 +297,13 @@ struct VideoReelView: View {
                                                         Image(systemName: "message.fill")
                                                             .font(.system(size: 24))
                                                             .foregroundColor(.white)
-
+                                                        
                                                         Text("\(video.comments)")
                                                             .font(.system(size: 12, weight: .semibold))
                                                             .foregroundColor(.white)
                                                     }
                                                 }
-
+                                                
                                                 Button(action: {
                                                     // Handle view action
                                                 }) {
@@ -303,16 +311,57 @@ struct VideoReelView: View {
                                                         Image(systemName: "eye.fill")
                                                             .font(.system(size: 24))
                                                             .foregroundColor(.white)
-
+                                                        
                                                         Text("\(video.views)")
                                                             .font(.system(size: 12, weight: .semibold))
                                                             .foregroundColor(.white)
                                                     }
                                                 }
                                             }
-                                            .padding(.trailing, 16)
+                                            .padding(.trailing,16)
                                         }
-                                        .padding(.bottom, 60)
+
+                                        VStack {
+                                            
+                                            HStack {
+                                                Image(video.userProfileImage) // Replace with your image asset
+                                                    .resizable()
+                                                    .scaledToFill()
+                                                    .frame(width: 40, height: 40)
+                                                    .clipShape(Circle())
+                                                
+                                                Circle()
+                                                    .frame(width: 40, height: 40, alignment: .center)
+
+                                            
+                                            // User Profile, Username, Timestamp, and Caption
+                                            VStack(alignment: .leading, spacing: 8) {
+
+                                                    Text(video.username)
+                                                        .font(.system(size: 14, weight: .semibold))
+                                                        .foregroundColor(.white)
+
+                                    //                                                    Spacer()
+
+                                                    Text(video.timestamp)
+                                                        .font(.system(size: 12, weight: .regular))
+                                                        .foregroundColor(.white)
+                                                }
+                                                Spacer()
+                                            }.padding(.leading,16)
+                                            
+                                            Text(video.caption)
+                                                .font(.system(size: 14, weight: .regular))
+                                                .foregroundColor(.white)
+                                                .lineLimit(showFullCaption ? nil : 2)
+                                                .onTapGesture {
+                                                    showFullCaption.toggle()
+                                                }
+                                                .padding(.leading,16)
+
+                                            
+                                        }
+                                        .padding(.bottom, 70)
                                     }
                                 }
                             }
@@ -341,5 +390,95 @@ struct VideoReelView: View {
             }
             playerManager.preloadNextVideos(from: index)
         }
+    }
+}
+// MARK: - ContentView
+struct ReelsPlayer: View {
+    let videos = [
+        Video(
+            url: URL(string: "https://tootisabz.com:4090/storage/uploads/4269/posts/4710/stream_videos/post_media_e0c128ce-ad99-4621-8b85-20a116a02e05.m3u8")!,
+            userProfileImage: "profile1", // Replace with your image asset
+            username: "user1",
+            caption: "This is a sample caption for the first video. Tap to show more or less.",
+            likes: 123,
+            comments: 45,
+            views: 678,
+            timestamp: "6:28"
+        ),
+        Video(
+            url: URL(string: "https://tootisabz.com:4090/storage/uploads/4282/posts/4708/stream_videos/post_media_4c55abba-ec32-4da4-b2aa-097ff4bf5af3.m3u8")!,
+            userProfileImage: "profile2", // Replace with your image asset
+            username: "user2",
+            caption: "Another example caption for the second video.",
+            likes: 456,
+            comments: 78,
+            views: 910,
+            timestamp: "4:15"
+        ),
+        Video(
+            url: URL(string: "https://tootisabz.com:4090/storage/uploads/4274/posts/4709/stream_videos/post_media_d83bf0bc-9d30-4f97-8f3a-e5130c6089de.m3u8")!,
+            userProfileImage: "profile2", // Replace with your image asset
+            username: "user2",
+            caption: "Another example caption for the second video.",
+            likes: 456,
+            comments: 78,
+            views: 910,
+            timestamp: "4:15"
+        ),
+        Video(
+            url: URL(string: "https://tootisabz.com:4090/storage/uploads/3688/posts/4692/stream_videos/post_media_9d08dfda-1ff4-44da-874b-78a3d19a6303.m3u8")!,
+            userProfileImage: "profile2", // Replace with your image asset
+            username: "user2",
+            caption: "Another example caption for the second video.",
+            likes: 456,
+            comments: 78,
+            views: 910,
+            timestamp: "4:15"
+        ),
+        Video(
+            url: URL(string: "https://tootisabz.com:4090/storage/uploads/4050/posts/4700/stream_videos/post_media_d146690e-b09f-43ec-b266-694284c12f75.m3u8")!,
+            userProfileImage: "profile2", // Replace with your image asset
+            username: "user2",
+            caption: "Another example caption for the second video.",
+            likes: 456,
+            comments: 78,
+            views: 910,
+            timestamp: "4:15"
+        ),
+        Video(
+            url: URL(string: "https://tootisabz.com:4090/storage/uploads/4267/posts/4675/stream_videos/post_media_4e7b5e5a-0d6f-4df1-b73f-a52b5db0d96c.m3u8")!,
+            userProfileImage: "profile2", // Replace with your image asset
+            username: "user2",
+            caption: "Another example caption for the second video.",
+            likes: 456,
+            comments: 78,
+            views: 910,
+            timestamp: "4:15"
+        ),
+        Video(
+            url: URL(string: "https://tootisabz.com:4090/storage/uploads/3688/posts/4690/stream_videos/post_media_8a8568f5-a6b6-4525-aef0-64a4b3409f60.m3u8")!,
+            userProfileImage: "profile2", // Replace with your image asset
+            username: "user2",
+            caption: "Another example caption for the second video.",
+            likes: 456,
+            comments: 78,
+            views: 910,
+            timestamp: "4:15"
+        ),
+        Video(
+            url: URL(string: "https://tootisabz.com:4090/storage/uploads/1495/posts/4676/stream_videos/post_media_d0745a7c-33cd-491e-92f6-0fc373aee1a1.m3u8")!,
+            userProfileImage: "profile2", // Replace with your image asset
+            username: "user2",
+            caption: "Another example caption for the second video.",
+            likes: 456,
+            comments: 78,
+            views: 910,
+            timestamp: "4:15"
+        ),
+    ]
+
+    var body: some View {
+        VideoReelView(videos: videos)
+            .edgesIgnoringSafeArea(.all)
     }
 }

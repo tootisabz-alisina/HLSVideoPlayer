@@ -1,3 +1,10 @@
+////
+////  ReelsPlayer.swift
+////  HLSVideoPlayer
+////
+////  Created by Alisina Haidari on 31.01.2025.
+////
+//
 //import SwiftUI
 //import AVKit
 //
@@ -5,6 +12,13 @@
 //struct Video: Identifiable {
 //    let id = UUID()
 //    let url: URL
+//    let userProfileImage: String // Placeholder for profile image
+//    let username: String
+//    let caption: String
+//    let likes: Int
+//    let comments: Int
+//    let views: Int
+//    let timestamp: String // Example: "6:28"
 //}
 //
 //// MARK: - Video Player View
@@ -20,103 +34,244 @@
 //    }
 //
 //    func updateUIViewController(_ uiViewController: AVPlayerViewController, context: Context) {
-//        // Update the player if needed
+//        // No updates needed
 //    }
 //}
 //
 //// MARK: - Video Player Manager
-//class VideoPlayerManager: ObservableObject {
-//    @Published var players: [AVPlayer?] = []
-//    @Published var loadingPercentages: [Int: Double] = [:] // Track loading percentages for each video
-//    private var observers: [NSObjectProtocol] = []
-//    private var timeObservers: [Any] = []
+//class VideoPlayerManager: NSObject, ObservableObject { // Inherit from NSObject
+//    @Published var players: [AVPlayer?]
+//    private var preloadCount = 2 // Number of videos to preload ahead
+//    private var videos: [Video]
 //
 //    init(videos: [Video]) {
+//        self.videos = videos
 //        self.players = Array(repeating: nil, count: videos.count)
+//        super.init() // Call super.init() for NSObject
 //    }
 //
-//    func loadPlayer(for index: Int, with url: URL) {
-//        if players[index] == nil {
-//            print("Initializing player for video \(index)")
-//            let player = AVPlayer(url: url)
-//            players[index] = player
-//            player.pause() // Preload but don't play
+//    func loadPlayer(for index: Int) {
+//        guard players[index] == nil else { return }
 //
-//            // Configure player to start playback earlier
-//            player.automaticallyWaitsToMinimizeStalling = false // Start playback as soon as possible
+//        print("Initializing player for video \(index)")
+//        let player = AVPlayer(url: videos[index].url)
+//        players[index] = player
+//        player.pause() // Preload but don't play
 //
-//            if let currentItem = player.currentItem {
-//                currentItem.preferredForwardBufferDuration = 1 // Buffer 1 second ahead
-//            }
+//        // Add observer for auto-replay
+//        NotificationCenter.default.addObserver(
+//            self, // Use self (now an NSObject)
+//            selector: #selector(playerItemDidReachEnd(_:)),
+//            name: .AVPlayerItemDidPlayToEndTime,
+//            object: player.currentItem
+//        )
 //
-//            // Add observer for auto-replay
-//            let observer = NotificationCenter.default.addObserver(
-//                forName: .AVPlayerItemDidPlayToEndTime,
-//                object: player.currentItem,
-//                queue: .main
-//            ) { [weak self] _ in
-//                print("Video \(index) ended, restarting...")
-//                self?.restartVideo(at: index)
-//            }
-//            observers.append(observer)
+//        // Add observer for player status changes
+//        player.addObserver(self, forKeyPath: "status", options: .new, context: nil)
+//    }
 //
-//            // Add observer to track loading progress
-//            let timeObserver = player.addPeriodicTimeObserver(forInterval: CMTime(seconds: 0.5, preferredTimescale: 600), queue: .main) { [weak self] _ in
-//                self?.updateLoadingPercentage(for: index)
-//            }
-//            timeObservers.append(timeObserver)
+//    @objc private func playerItemDidReachEnd(_ notification: Notification) {
+//        if let playerItem = notification.object as? AVPlayerItem,
+//           let index = players.firstIndex(where: { $0?.currentItem == playerItem }) {
+//            print("Video \(index) ended, restarting...")
+//            players[index]?.seek(to: .zero)
+//            players[index]?.play()
 //        }
 //    }
 //
-//    func updateLoadingPercentage(for index: Int) {
-//        guard let player = players[index],
-//              let currentItem = player.currentItem else { return }
+//    func preloadNextVideos(from index: Int) {
+//        let startIndex = index + 1
+//        let endIndex = min(index + preloadCount, videos.count - 1)
 //
-//        let loadedTimeRanges = currentItem.loadedTimeRanges
-//        guard let timeRange = loadedTimeRanges.first?.timeRangeValue else { return }
+//        // Ensure startIndex is within bounds and startIndex <= endIndex
+//        guard startIndex < videos.count, startIndex <= endIndex else {
+//            print("No more videos to preload")
+//            return
+//        }
 //
-//        let startSeconds = CMTimeGetSeconds(timeRange.start)
-//        let durationSeconds = CMTimeGetSeconds(timeRange.duration)
-//        let loadedSeconds = startSeconds + durationSeconds
-//
-//        if let totalDuration = currentItem.duration.seconds.isFinite ? currentItem.duration.seconds : nil {
-//            let percentage = (loadedSeconds / totalDuration) * 100
-//            loadingPercentages[index] = percentage
-//            print("Video \(index) loaded: \(String(format: "%.2f", percentage))%")
-//
-//            // Start playback when 40% of the video is loaded
-//            if percentage >= 40 && player.rate == 0 {
-//                print("Starting playback for video \(index) at \(String(format: "%.2f", percentage))% loaded")
-//                player.play()
+//        for i in startIndex...endIndex {
+//            if players[i] == nil {
+//                print("Preloading video \(i)")
+//                loadPlayer(for: i)
 //            }
 //        }
 //    }
 //
-//    func restartVideo(at index: Int) {
-//        guard let player = players[index] else { return }
-//        player.seek(to: .zero)
-//        player.play()
-//    }
-//
-//    func pauseVideo(at index: Int) {
+//    func pausePlayer(at index: Int) {
 //        print("Pausing video \(index)")
 //        players[index]?.pause()
 //    }
 //
-//    func playVideo(at index: Int) {
+//    func playPlayer(at index: Int) {
 //        print("Playing video \(index)")
 //        players[index]?.play()
 //    }
 //
-//    func seekToBeginning(at index: Int) {
-//        guard let player = players[index] else { return }
-//        player.seek(to: .zero)
+//    func seekPlayer(at index: Int, to time: CMTime) {
+//        print("Seeking video \(index) to \(time.seconds)")
+//        players[index]?.seek(to: time, toleranceBefore: .zero, toleranceAfter: .zero)
+//    }
+//
+//    func resetPlayer(at index: Int) {
+//        print("Resetting video \(index)")
+//        players[index]?.seek(to: .zero)
 //    }
 //
 //    deinit {
-//        // Remove all observers
-//        observers.forEach { NotificationCenter.default.removeObserver($0) }
-//        timeObservers.forEach { _ in players.compactMap { $0 }.forEach { $0.removeTimeObserver($0) } }
+//        // Clean up observers
+//        for player in players {
+//            NotificationCenter.default.removeObserver(self, name: .AVPlayerItemDidPlayToEndTime, object: player?.currentItem)
+//            player?.removeObserver(self, forKeyPath: "status")
+//        }
+//    }
+//
+//    // Handle player status changes
+//    override func observeValue(forKeyPath keyPath: String?, of object: Any?, change: [NSKeyValueChangeKey: Any]?, context: UnsafeMutableRawPointer?) {
+//        if keyPath == "status" {
+//            if let player = object as? AVPlayer {
+//                switch player.status {
+//                case .readyToPlay:
+//                    print("Player is ready to play")
+//                case .failed:
+//                    print("Player failed with error: \(player.error?.localizedDescription ?? "Unknown error")")
+//                case .unknown:
+//                    print("Player status is unknown")
+//                @unknown default:
+//                    print("Unknown player status")
+//                }
+//            }
+//        }
+//    }
+//}
+//
+//// MARK: - Video Overlay View
+//struct VideoOverlayView: View {
+//    let video: Video
+//    @Binding var showFullCaption: Bool
+//    @Binding var isPaused: Bool
+//    @Binding var showPauseIcon: Bool
+//    @Binding var progress: Double
+//    @Binding var isSeeking: Bool
+//    @Binding var seekProgress: Double
+//    let playerManager: VideoPlayerManager
+//    let index: Int
+//    let geometry: GeometryProxy
+//
+//    var body: some View {
+//        VStack {
+//            Spacer()
+//
+//            // Like, Comment, View Section
+//            HStack {
+//                Spacer()
+//                VStack(alignment: .trailing, spacing: 20) {
+//                    Button(action: {
+//                        // Handle like action
+//                    }) {
+//                        VStack(spacing: 4) {
+//                            Image(systemName: "heart.fill")
+//                                .font(.system(size: 24))
+//                                .foregroundColor(.white)
+//                            
+//                            Text("\(video.likes)")
+//                                .font(.system(size: 12, weight: .semibold))
+//                                .foregroundColor(.white)
+//                        }
+//                    }
+//                    
+//                    Button(action: {
+//                        // Handle comment action
+//                    }) {
+//                        VStack(spacing: 4) {
+//                            Image(systemName: "message.fill")
+//                                .font(.system(size: 24))
+//                                .foregroundColor(.white)
+//                            
+//                            Text("\(video.comments)")
+//                                .font(.system(size: 12, weight: .semibold))
+//                                .foregroundColor(.white)
+//                        }
+//                    }
+//                    
+//                    Button(action: {
+//                        // Handle view action
+//                    }) {
+//                        VStack(spacing: 4) {
+//                            Image(systemName: "eye.fill")
+//                                .font(.system(size: 24))
+//                                .foregroundColor(.white)
+//                            
+//                            Text("\(video.views)")
+//                                .font(.system(size: 12, weight: .semibold))
+//                                .foregroundColor(.white)
+//                        }
+//                    }
+//                }
+//                .padding(.trailing, 16)
+//            }
+//
+//            // User Profile, Username, Timestamp, and Caption
+//            VStack(alignment: .leading, spacing: 8) {
+//                HStack {
+//                    Image(video.userProfileImage) // Replace with your image asset
+//                        .resizable()
+//                        .scaledToFill()
+//                        .frame(width: 40, height: 40)
+//                        .clipShape(Circle())
+//                    
+//                    VStack(alignment: .leading, spacing: 4) {
+//                        Text(video.username)
+//                            .font(.system(size: 14, weight: .semibold))
+//                            .foregroundColor(.white)
+//                        
+//                        Text(video.timestamp)
+//                            .font(.system(size: 12, weight: .regular))
+//                            .foregroundColor(.white)
+//                    }
+//                    Spacer()
+//                }
+//                .padding(.leading, 16)
+//
+//                Text(video.caption)
+//                    .font(.system(size: 14, weight: .regular))
+//                    .foregroundColor(.white)
+//                    .lineLimit(showFullCaption ? nil : 2)
+//                    .onTapGesture {
+//                        showFullCaption.toggle()
+//                    }
+//                    .padding(.leading, 16)
+//            }
+//
+//            // Progress Bar
+//            VStack {
+//                ZStack(alignment: .leading) {
+//                    Rectangle()
+//                        .frame(height: 3)
+//                        .foregroundColor(.gray.opacity(0.5))
+//                    Rectangle()
+//                        .frame(width: geometry.size.width * CGFloat(isSeeking ? seekProgress : progress), height: 3)
+//                        .foregroundColor(.white)
+//                }
+//                .padding(.vertical, 16)
+//                .background(.black)
+//                .gesture(
+//                    DragGesture(minimumDistance: 0)
+//                        .onChanged { value in
+//                            isSeeking = true
+//                            let seekLocation = value.location.x / geometry.size.width
+//                            seekProgress = max(0, min(seekLocation, 1))
+//                            if let duration = playerManager.players[index]?.currentItem?.duration.seconds {
+//                                let seekTime = CMTime(seconds: duration * seekProgress, preferredTimescale: CMTimeScale(NSEC_PER_SEC))
+//                                playerManager.seekPlayer(at: index, to: seekTime)
+//                            }
+//                        }
+//                        .onEnded { _ in
+//                            isSeeking = false
+//                        }
+//                )
+//            }
+//        }
+//        .padding(.bottom, 30)
 //    }
 //}
 //
@@ -125,6 +280,12 @@
 //    let videos: [Video]
 //    @StateObject private var playerManager: VideoPlayerManager
 //    @State private var currentIndex: Int = 0
+//    @State private var showFullCaption: Bool = false
+//    @State private var isPaused: Bool = false
+//    @State private var progress: Double = 0.0
+//    @State private var showPauseIcon: Bool = false
+//    @State private var isSeeking: Bool = false
+//    @State private var seekProgress: Double = 0.0
 //
 //    init(videos: [Video]) {
 //        self.videos = videos
@@ -139,35 +300,81 @@
 //                        ForEach(Array(videos.enumerated()), id: \.element.id) { index, video in
 //                            GeometryReader { itemGeometry in
 //                                let isVisible = abs(itemGeometry.frame(in: .global).minY) < geometry.size.height / 2
-//                                if let player = playerManager.players[index] {
-//                                    VStack {
+//
+//                                ZStack {
+//                                    if let player = playerManager.players[index] {
 //                                        VideoPlayerView(player: player)
 //                                            .frame(width: geometry.size.width, height: geometry.size.height)
 //                                            .id(index)
-//                                        if let percentage = playerManager.loadingPercentages[index] {
-//                                            Text("Loaded: \(String(format: "%.2f", percentage))%")
-//                                                .foregroundColor(.white)
-//                                                .padding()
-//                                                .background(Color.black.opacity(0.7))
-//                                                .cornerRadius(8)
-//                                        }
-//                                    }
-//                                    .onChange(of: isVisible) { _, newIsVisible in
-//                                        print("Video \(index) visibility changed to \(newIsVisible)")
-//                                        handleVisibilityChange(newIsVisible, at: index)
-//                                    }
-//                                } else {
-//                                    Color.black // Placeholder while loading
-//                                        .frame(width: geometry.size.width, height: geometry.size.height)
-//                                        .onAppear {
-//                                            print("Loading video \(index)")
-//                                            playerManager.loadPlayer(for: index, with: video.url)
-//                                            if index == 0 {
-//                                                print("Playing first video \(index)")
-//                                                playerManager.playVideo(at: index)
-//                                                preloadNextVideos(from: index)
+//                                            .onChange(of: isVisible) { _, newIsVisible in
+//                                                handleVisibilityChange(newIsVisible, index: index)
 //                                            }
-//                                        }
+//                                            .onAppear {
+//                                                // Observe progress for the current video
+//                                                let interval = CMTime(seconds: 0.1, preferredTimescale: CMTimeScale(NSEC_PER_SEC))
+//                                                player.addPeriodicTimeObserver(forInterval: interval, queue: .main) { time in
+//                                                    if let duration = player.currentItem?.duration.seconds, duration > 0 {
+//                                                        progress = time.seconds / duration
+//                                                    }
+//                                                }
+//                                            }
+//                                            .overlay(
+//                                                // Pause Icon with Animation
+//                                                Group {
+//                                                    if showPauseIcon {
+//                                                        Image(systemName: isPaused ? "play.circle.fill" : "pause.circle.fill")
+//                                                            .font(.system(size: 60))
+//                                                            .foregroundColor(.white.opacity(0.8))
+//                                                            .transition(.scale.combined(with: .opacity))
+//                                                    }
+//                                                }
+//                                                .animation(.easeInOut(duration: 0.2), value: showPauseIcon)
+//                                            )
+//                                            .onTapGesture { location in
+//                                                // Calculate the tap location relative to the screen height
+//                                                let screenHeight = geometry.size.height
+//                                                let tapY = location.y
+//
+//                                                // Only trigger play/pause if the tap is in the top 80% of the screen
+//                                                if tapY < screenHeight * 0.8 {
+//                                                    isPaused.toggle()
+//                                                    if isPaused {
+//                                                        playerManager.pausePlayer(at: index)
+//                                                    } else {
+//                                                        playerManager.playPlayer(at: index)
+//                                                    }
+//                                                    // Show pause icon with animation
+//                                                    showPauseIcon = true
+//                                                    DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+//                                                        showPauseIcon = false
+//                                                    }
+//                                                }
+//                                            }
+//                                    } else {
+//                                        Color.black // Placeholder while loading
+//                                            .frame(width: geometry.size.width, height: geometry.size.height)
+//                                            .onAppear {
+//                                                playerManager.loadPlayer(for: index)
+//                                                if index == 0 {
+//                                                    playerManager.playPlayer(at: index)
+//                                                    playerManager.preloadNextVideos(from: index)
+//                                                }
+//                                            }
+//                                    }
+//
+//                                    // Overlay UI for likes, comments, views, profile, etc.
+//                                    VideoOverlayView(
+//                                        video: video,
+//                                        showFullCaption: $showFullCaption,
+//                                        isPaused: $isPaused,
+//                                        showPauseIcon: $showPauseIcon,
+//                                        progress: $progress,
+//                                        isSeeking: $isSeeking,
+//                                        seekProgress: $seekProgress,
+//                                        playerManager: playerManager,
+//                                        index: index,
+//                                        geometry: geometry
+//                                    )
 //                                }
 //                            }
 //                            .frame(width: geometry.size.width, height: geometry.size.height)
@@ -180,49 +387,107 @@
 //        }
 //        .edgesIgnoringSafeArea(.all)
 //        .onAppear {
-//            UIScrollView.appearance().isPagingEnabled = true // Enable paging behavior
+//            UIScrollView.appearance().isPagingEnabled = true
 //        }
 //    }
 //
-//    private func handleVisibilityChange(_ isVisible: Bool, at index: Int) {
+//    private func handleVisibilityChange(_ isVisible: Bool, index: Int) {
 //        if isVisible {
+//            print("Video \(index) is now visible")
 //            if currentIndex != index {
-//                playerManager.pauseVideo(at: currentIndex)
-//                playerManager.seekToBeginning(at: index) // Restart the video from the beginning
-//                playerManager.playVideo(at: index)
+//                playerManager.pausePlayer(at: currentIndex)
+//                playerManager.resetPlayer(at: currentIndex) // Reset previous video
+//                playerManager.playPlayer(at: index)
 //                currentIndex = index
 //            }
-//            preloadNextVideos(from: index)
-//        }
-//    }
-//
-//    private func preloadNextVideos(from index: Int) {
-//        let preloadCount = 1 // Number of videos to preload ahead
-//        let endIndex = min(index + preloadCount, videos.count - 1)
-//
-//        // Ensure the range is valid
-//        if index + 1 <= endIndex {
-//            for i in (index + 1)...endIndex {
-//                if playerManager.players[i] == nil {
-//                    print("Preloading video \(i)")
-//                    playerManager.loadPlayer(for: i, with: videos[i].url)
-//                }
-//            }
+//            playerManager.preloadNextVideos(from: index)
 //        }
 //    }
 //}
 //
 //// MARK: - ContentView
-//struct Reels2: View {
+//struct ReelsPlayer: View {
 //    let videos = [
-//        Video(url: URL(string: "https://tootisabz.com:4090/storage/uploads/4269/posts/4710/stream_videos/post_media_e0c128ce-ad99-4621-8b85-20a116a02e05.m3u8")!),
-//        Video(url: URL(string: "https://tootisabz.com:4090/storage/uploads/4282/posts/4708/stream_videos/post_media_4c55abba-ec32-4da4-b2aa-097ff4bf5af3.m3u8")!),
-//        Video(url: URL(string: "https://tootisabz.com:4090/storage/uploads/4274/posts/4709/stream_videos/post_media_d83bf0bc-9d30-4f97-8f3a-e5130c6089de.m3u8")!),
-//        Video(url: URL(string: "https://tootisabz.com:4090/storage/uploads/3688/posts/4692/stream_videos/post_media_9d08dfda-1ff4-44da-874b-78a3d19a6303.m3u8")!),
-//        Video(url: URL(string: "https://tootisabz.com:4090/storage/uploads/4050/posts/4700/stream_videos/post_media_d146690e-b09f-43ec-b266-694284c12f75.m3u8")!),
-//        Video(url: URL(string: "https://tootisabz.com:4090/storage/uploads/4267/posts/4675/stream_videos/post_media_4e7b5e5a-0d6f-4df1-b73f-a52b5db0d96c.m3u8")!),
-//        Video(url: URL(string: "https://tootisabz.com:4090/storage/uploads/3688/posts/4690/stream_videos/post_media_8a8568f5-a6b6-4525-aef0-64a4b3409f60.m3u8")!),
-//        Video(url: URL(string: "https://tootisabz.com:4090/storage/uploads/1495/posts/4676/stream_videos/post_media_d0745a7c-33cd-491e-92f6-0fc373aee1a1.m3u8")!),
+//        Video(
+//            url: URL(string: "https://tootisabz.com:4090/storage/uploads/4269/posts/4710/stream_videos/post_media_e0c128ce-ad99-4621-8b85-20a116a02e05.m3u8")!,
+//            userProfileImage: "profile1", // Replace with your image asset
+//            username: "user1",
+//            caption: "This is a sample caption for the first video. Tap to show more or less.",
+//            likes: 123,
+//            comments: 45,
+//            views: 678,
+//            timestamp: "6:28"
+//        ),
+//        Video(
+//            url: URL(string: "https://tootisabz.com:4090/storage/uploads/4282/posts/4708/stream_videos/post_media_4c55abba-ec32-4da4-b2aa-097ff4bf5af3.m3u8")!,
+//            userProfileImage: "profile2", // Replace with your image asset
+//            username: "user2",
+//            caption: "Another example caption for the second video.",
+//            likes: 456,
+//            comments: 78,
+//            views: 910,
+//            timestamp: "4:15"
+//        ),
+//        Video(
+//            url: URL(string: "https://tootisabz.com:4090/storage/uploads/4274/posts/4709/stream_videos/post_media_d83bf0bc-9d30-4f97-8f3a-e5130c6089de.m3u8")!,
+//            userProfileImage: "profile2", // Replace with your image asset
+//            username: "user2",
+//            caption: "Another example caption for the second video.",
+//            likes: 456,
+//            comments: 78,
+//            views: 910,
+//            timestamp: "4:15"
+//        ),
+//        Video(
+//            url: URL(string: "https://tootisabz.com:4090/storage/uploads/3688/posts/4692/stream_videos/post_media_9d08dfda-1ff4-44da-874b-78a3d19a6303.m3u8")!,
+//            userProfileImage: "profile2", // Replace with your image asset
+//            username: "user2",
+//            caption: "Another example caption for the second video.",
+//            likes: 456,
+//            comments: 78,
+//            views: 910,
+//            timestamp: "4:15"
+//        ),
+//        Video(
+//            url: URL(string: "https://tootisabz.com:4090/storage/uploads/4050/posts/4700/stream_videos/post_media_d146690e-b09f-43ec-b266-694284c12f75.m3u8")!,
+//            userProfileImage: "profile2", // Replace with your image asset
+//            username: "user2",
+//            caption: "Another example caption for the second video.",
+//            likes: 456,
+//            comments: 78,
+//            views: 910,
+//            timestamp: "4:15"
+//        ),
+//        Video(
+//            url: URL(string: "https://tootisabz.com:4090/storage/uploads/4267/posts/4675/stream_videos/post_media_4e7b5e5a-0d6f-4df1-b73f-a52b5db0d96c.m3u8")!,
+//            userProfileImage: "profile2", // Replace with your image asset
+//            username: "user2",
+//            caption: "Another example caption for the second video.",
+//            likes: 456,
+//            comments: 78,
+//            views: 910,
+//            timestamp: "4:15"
+//        ),
+//        Video(
+//            url: URL(string: "https://tootisabz.com:4090/storage/uploads/3688/posts/4690/stream_videos/post_media_8a8568f5-a6b6-4525-aef0-64a4b3409f60.m3u8")!,
+//            userProfileImage: "profile2", // Replace with your image asset
+//            username: "user2",
+//            caption: "Another example caption for the second video.",
+//            likes: 456,
+//            comments: 78,
+//            views: 910,
+//            timestamp: "4:15"
+//        ),
+//        Video(
+//            url: URL(string: "https://tootisabz.com:4090/storage/uploads/1495/posts/4676/stream_videos/post_media_d0745a7c-33cd-491e-92f6-0fc373aee1a1.m3u8")!,
+//            userProfileImage: "profile2", // Replace with your image asset
+//            username: "user2",
+//            caption: "Another example caption for the second video.",
+//            likes: 456,
+//            comments: 78,
+//            views: 910,
+//            timestamp: "4:15"
+//        ),
 //    ]
 //
 //    var body: some View {
